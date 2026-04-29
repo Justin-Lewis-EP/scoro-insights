@@ -80,8 +80,20 @@ export function getWeekRange(anchorDate?: Date): WeekRange {
   return { from: fmt(monday), to: fmt(sunday), monday: fmt(monday) };
 }
 
-function scoreComplexity(createdIso: string, deadlineIso: string, description: string): ComplexityRating {
-  // Duration score: days from created to deadline
+function parseHMSToHours(hms: string): number {
+  const parts = hms.split(':').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return 0;
+  return parts[0] + parts[1] / 60 + parts[2] / 3600;
+}
+
+function scoreComplexity(
+  createdIso: string,
+  deadlineIso: string,
+  description: string,
+  durationPlanned: string,
+  durationActual: string,
+): ComplexityRating {
+  // Condition 1: days from created to deadline
   const created = new Date(createdIso);
   const deadline = new Date(deadlineIso);
   const days = isNaN(created.getTime()) || isNaN(deadline.getTime())
@@ -89,11 +101,24 @@ function scoreComplexity(createdIso: string, deadlineIso: string, description: s
     : Math.max(0, (deadline.getTime() - created.getTime()) / 86_400_000);
   const durationScore = days <= 2 ? 1 : days <= 7 ? 2 : 3;
 
-  // Description score: character length
+  // Condition 2: description character length
   const len = description.trim().length;
   const descScore = len < 50 ? 1 : len <= 200 ? 2 : 3;
 
-  const avg = (durationScore + descScore) / 2;
+  // Condition 3: planned time
+  const plannedHours = parseHMSToHours(durationPlanned);
+  const plannedScore = plannedHours <= 1 ? 1 : plannedHours <= 5 ? 2 : 3;
+
+  const scores = [durationScore, descScore, plannedScore];
+
+  // Condition 4: overtime ratio — only weighted when actual exceeds planned
+  const actualHours = parseHMSToHours(durationActual);
+  if (plannedHours > 0 && actualHours > plannedHours) {
+    const overRatio = (actualHours - plannedHours) / plannedHours;
+    scores.push(overRatio <= 0.5 ? 2 : 3);
+  }
+
+  const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
   if (avg < 1.5) return 'low';
   if (avg < 2.5) return 'medium';
   return 'high';
@@ -137,6 +162,6 @@ export async function fetchWeeklyTasks(weekDate?: Date): Promise<EnrichedTask[]>
     deadline: t.datetime_due || '—',
     time_planned: t.duration_planned ?? '—',
     time_actual: t.duration_actual ?? '—',
-    complexity: scoreComplexity(t.created_date, t.datetime_due, t.description ?? ''),
+    complexity: scoreComplexity(t.created_date, t.datetime_due, t.description ?? '', t.duration_planned ?? '00:00:00', t.duration_actual ?? '00:00:00'),
   }));
 }
