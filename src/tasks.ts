@@ -9,6 +9,7 @@ export interface Task {
   project_id: number;
   status: string;
   datetime_due: string;
+  description?: string;
   [key: string]: unknown;
 }
 
@@ -26,6 +27,8 @@ export interface Project {
   [key: string]: unknown;
 }
 
+export type ComplexityRating = 'low' | 'medium' | 'high';
+
 export interface EnrichedTask {
   task_id: number;
   task_name: string;
@@ -35,6 +38,7 @@ export interface EnrichedTask {
   project_name: string;
   status: string;
   deadline: string;
+  complexity: ComplexityRating;
 }
 
 export interface WeekRange {
@@ -72,6 +76,25 @@ export function getWeekRange(anchorDate?: Date): WeekRange {
   return { from: fmt(monday), to: fmt(sunday), monday: fmt(monday) };
 }
 
+function scoreComplexity(createdIso: string, deadlineIso: string, description: string): ComplexityRating {
+  // Duration score: days from created to deadline
+  const created = new Date(createdIso);
+  const deadline = new Date(deadlineIso);
+  const days = isNaN(created.getTime()) || isNaN(deadline.getTime())
+    ? 0
+    : Math.max(0, (deadline.getTime() - created.getTime()) / 86_400_000);
+  const durationScore = days <= 2 ? 1 : days <= 7 ? 2 : 3;
+
+  // Description score: character length
+  const len = description.trim().length;
+  const descScore = len < 50 ? 1 : len <= 200 ? 2 : 3;
+
+  const avg = (durationScore + descScore) / 2;
+  if (avg < 1.5) return 'low';
+  if (avg < 2.5) return 'medium';
+  return 'high';
+}
+
 export async function fetchWeeklyTasks(weekDate?: Date): Promise<EnrichedTask[]> {
   const client = new ScoroClient();
   const { from, to } = getWeekRange(weekDate);
@@ -107,5 +130,6 @@ export async function fetchWeeklyTasks(weekDate?: Date): Promise<EnrichedTask[]>
     project_name: t.project_id ? (projectMap.get(t.project_id) ?? `(project ${t.project_id})`) : '—',
     status: t.status,
     deadline: t.datetime_due || '—',
+    complexity: scoreComplexity(t.created_date, t.datetime_due, t.description ?? ''),
   }));
 }
