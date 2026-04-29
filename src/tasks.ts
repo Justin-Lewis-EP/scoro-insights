@@ -10,6 +10,8 @@ export interface Task {
   status: string;
   datetime_due: string;
   description?: string;
+  duration_planned?: string;
+  duration_actual?: string;
   [key: string]: unknown;
 }
 
@@ -38,6 +40,8 @@ export interface EnrichedTask {
   project_name: string;
   status: string;
   deadline: string;
+  time_planned: string;
+  time_actual: string;
   complexity: ComplexityRating;
 }
 
@@ -95,6 +99,7 @@ function scoreComplexity(createdIso: string, deadlineIso: string, description: s
   return 'high';
 }
 
+
 export async function fetchWeeklyTasks(weekDate?: Date): Promise<EnrichedTask[]> {
   const client = new ScoroClient();
   const { from, to } = getWeekRange(weekDate);
@@ -130,6 +135,8 @@ export async function fetchWeeklyTasks(weekDate?: Date): Promise<EnrichedTask[]>
     project_name: t.project_id ? (projectMap.get(t.project_id) ?? `(project ${t.project_id})`) : '—',
     status: t.status,
     deadline: t.datetime_due || '—',
+    time_planned: t.duration_planned ?? '—',
+    time_actual: t.duration_actual ?? '—',
     complexity: scoreComplexity(t.created_date, t.datetime_due, t.description ?? ''),
   }));
 }
